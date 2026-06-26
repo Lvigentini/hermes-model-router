@@ -1,0 +1,10 @@
+#!/bin/sh
+# Auto-bump the patch version on every commit, then stage the synced files so
+# the version change is part of this commit. Enable once with:
+#   git config core.hooksPath .githooks
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+NEW="$(python3 "$ROOT/scripts/bump_version.py" patch)"
+git add "$ROOT/VERSION" "$ROOT/pyproject.toml" "$ROOT/plugin.yaml" \
+        "$ROOT/hermes_model_router/__init__.py"
+echo "pre-commit: bumped version to $NEW"

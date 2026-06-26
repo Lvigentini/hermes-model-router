@@ -5,7 +5,8 @@ Local, **no-LLM-call** complexity router for the [Hermes agent](https://github.c
 transparent weighted heuristic (sub-millisecond, zero ML, zero network) and routes to a
 tier-appropriate model, so easy prompts run cheap and hard prompts get a strong model.
 
-> Full design, research, and the Hermes-internals "seam finding" live in [`docs/PLAN.md`](docs/PLAN.md).
+> Full design and research: [`docs/PLAN.md`](docs/PLAN.md). What this router **can't** do today and why
+> (the verified Hermes seam limit): [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md).
 
 ## How it works
 

@@ -12,7 +12,8 @@ import logging
 from .config import RouterConfig
 from .middleware import make_llm_request_middleware
 
-__all__ = ["register", "RouterConfig"]
+__version__ = "0.1.1"
+__all__ = ["register", "RouterConfig", "__version__"]
 
 logger = logging.getLogger("hermes_model_router")
 
