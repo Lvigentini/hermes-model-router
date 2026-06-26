@@ -51,6 +51,9 @@ must re-pad reasoning fields). It is also exactly "decide at the gateway, before
   yields no key/command), the turn keeps the primary route rather than erroring.
 - **Cost is intentional.** Routing hard turns to a strong model costs more by design; a confidence gate
   in the router avoids needless switching for ambiguous prompts.
+- **Explicit pins win.** When the user pins a model (`/model`, a session model override), the gateway
+  tags the turn (`_explicit_model`) and passes `explicit_model=True` into the `model_request` context,
+  so a well-behaved router stands down. Routers that ignore this can still override (their choice).
 - **Determinism.** With a rule-based local router the decision is deterministic and inspectable
   (middleware `trace` records source + reason), which keeps routing debuggable.
 

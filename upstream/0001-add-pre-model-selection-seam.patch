@@ -1,12 +1,33 @@
 diff --git a/gateway/run.py b/gateway/run.py
-index e2a1b88..11a290f 100644
+index e2a1b88..e987dce 100644
 --- a/gateway/run.py
 +++ b/gateway/run.py
-@@ -2880,6 +2880,76 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
+@@ -2801,6 +2801,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
+                 "base_url": override.get("base_url"),
+                 "api_mode": override.get("api_mode"),
+                 "max_tokens": override.get("max_tokens"),
++                # Marker: the user explicitly pinned this model (e.g. `/model`).
++                # Read (and not propagated) by _resolve_turn_agent_config so a
++                # model_request router can honour respect_explicit_model.
++                "_explicit_model": True,
+             }
+             if override_runtime.get("api_key"):
+                 logger.debug(
+@@ -2835,6 +2839,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
+             model, runtime_kwargs = self._apply_session_model_override(
+                 resolved_session_key, model, runtime_kwargs
+             )
++            runtime_kwargs["_explicit_model"] = True
+ 
+         # When the config has no model.default but a provider was resolved
+         # (e.g. user ran `hermes auth add openai-codex` without `hermes model`),
+@@ -2880,6 +2885,82 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
  
          return model, runtime_kwargs
  
-+    def _apply_model_selection(self, user_message: str, model: str, runtime: dict) -> tuple[str, dict]:
++    def _apply_model_selection(
++        self, user_message: str, model: str, runtime: dict, *, explicit: bool = False,
++    ) -> tuple[str, dict]:
 +        """Run ``model_request`` middleware and apply any re-route.
 +
 +        Returns ``(model, runtime)`` — unchanged when no middleware is
@@ -14,6 +35,9 @@ index e2a1b88..11a290f 100644
 +        chosen provider's credentials are resolved via ``resolve_runtime_provider``
 +        so the turn is bound to the right account. Always fail-open: any error
 +        keeps the session's primary route.
++
++        ``explicit`` indicates the user pinned this model (e.g. ``/model``); it is
++        passed to middleware as ``explicit_model`` so a router can stand down.
 +        """
 +        try:
 +            from hermes_cli.middleware import apply_model_request_middleware
@@ -25,6 +49,7 @@ index e2a1b88..11a290f 100644
 +                    "api_mode": runtime.get("api_mode"),
 +                },
 +                user_message=user_message or "",
++                explicit_model=bool(explicit),
 +            )
 +        except Exception:
 +            logger.debug("model_request middleware raised; keeping primary route", exc_info=True)
@@ -79,7 +104,7 @@ index e2a1b88..11a290f 100644
      def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict) -> dict:
          """Build the effective model/runtime config for a single turn.
  
-@@ -2900,6 +2970,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
+@@ -2900,6 +2981,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
              "credential_pool": runtime_kwargs.get("credential_pool"),
              "max_tokens": runtime_kwargs.get("max_tokens"),
          }
@@ -88,7 +113,10 @@ index e2a1b88..11a290f 100644
 +        # different model/provider BEFORE credentials are bound. The decision is
 +        # the plugin's (e.g. a local complexity classifier) and must not require
 +        # an LLM call. No-op when no `model_request` middleware is registered.
-+        model, runtime = self._apply_model_selection(user_message, model, runtime)
++        model, runtime = self._apply_model_selection(
++            user_message, model, runtime,
++            explicit=bool(runtime_kwargs.get("_explicit_model")),
++        )
 +
          route = {
              "model": model,

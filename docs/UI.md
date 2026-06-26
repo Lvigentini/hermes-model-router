@@ -25,11 +25,12 @@ Hermes enumerates the models you can route to.
 | `off` | do nothing — fully manual. |
 
 Other levers:
-- **`/model <name>`** pins a model for the session (Hermes session override). Use it to force a choice.
-  *Current limitation:* in `auto` mode the router can re-route even a pinned model, because the gateway
-  doesn't yet tell the middleware that the model was explicitly pinned. Until that refinement lands
-  (a one-line addition to the upstream patch — pass an `explicit_model` flag into the `model_request`
-  context, honoured by `respect_explicit_model`), use `mode: announce`/`off` when you want manual control.
+- **`/model <name>`** pins a model for the session and the router **stands down** (with
+  `respect_explicit_model: true`, the default) — your pin wins even in `auto` mode. The gateway tags a
+  pinned turn as `explicit_model` and the `model_request` middleware returns "no change". Set
+  `respect_explicit_model: false` to let the router override pins. (Pin-respect rides the upstream seam;
+  on a stock/unpatched build the same-provider `llm_request` path can't see the pin, so use
+  `mode: announce`/`off` there for strict manual control.)
 - **`gate_confidence`** — raise it (e.g. `0.7`) so only clearly-hard prompts trigger a switch; ambiguous
   prompts stay on the default. Fewer surprises.
 - **Per-tier defaults** — set the `cheap` tier to your everyday model so "no strong signal" always means

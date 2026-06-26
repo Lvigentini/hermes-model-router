@@ -51,6 +51,36 @@ model_router:
     reasoning: { provider: anthropic,    model: claude-opus-4-8 }
 ```
 
+## Modes — and is "auto" a Hermes feature?
+
+**No.** `mode` (and the whole notion of complexity-based routing) is **this plugin's**, not native
+Hermes. Stock Hermes runs every turn on one configured model and only changes it on *failure* (the
+`fallback_providers` chain) or a manual `/model`. There is no built-in "pick the model by how hard the
+prompt is" — that gap is exactly why this plugin (and the upstream `model_request` seam in
+[`docs/UPSTREAM_PATCHING.md`](docs/UPSTREAM_PATCHING.md)) exist.
+
+| `model_router.mode` | what happens |
+| --- | --- |
+| `auto` | Each turn is classified locally (no LLM call) and the model is **switched** to the tier target. Cross-provider switching needs the `model_request` seam (patched/merged Hermes); same-provider works on stock. This is the "live switching" behaviour. |
+| `announce` | Same classification, but it only **logs the suggestion** — your default model still answers. You decide whether to act (e.g. `/model …`). |
+| `off` | Disabled. |
+
+In `auto`, the flow per turn is: *user message → local heuristic → tier → `{provider, model}` → (gateway
+binds credentials for that provider) → the turn runs on the chosen model.* The footer shows which model
+answered; `hermes logs` shows the decision and reason.
+
+## Pinning a model (you override the router)
+
+Run **`/model <name>`** to pin a model for the session. With `respect_explicit_model: true` (default),
+the router detects the pin and **stands down** — your pinned model is used as-is, even in `auto` mode.
+Set `respect_explicit_model: false` if you want the router to override pins too.
+
+How it works: a pin is a Hermes *session model override*; the gateway tags that turn as
+`explicit_model` and passes it to the router's `model_request` middleware, which returns "no change"
+when a pin is active. (This relies on the upstream seam; the tag is part of the patch in `upstream/`.)
+On **stock** Hermes the same-provider `llm_request` path can't see the pin, so for strict manual
+control on an unpatched build use `mode: announce` or `off`.
+
 - **Showing/overriding the decision, and listing available models:** [`docs/UI.md`](docs/UI.md).
 - **Live cross-provider routing (patch a local Hermes / open the PR):** [`docs/UPSTREAM_PATCHING.md`](docs/UPSTREAM_PATCHING.md).
 - Validate your tier models exist: `python -m hermes_model_router.models`.

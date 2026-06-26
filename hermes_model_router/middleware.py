@@ -120,6 +120,10 @@ def make_model_request_middleware(cfg: RouterConfig):
         # always-present llm_request path to avoid double-reporting.
         if not cfg.active or not isinstance(request, dict):
             return None
+        # User pinned a model (e.g. `/model`) and asked us to respect it.
+        if cfg.respect_explicit_model and context.get("explicit_model"):
+            logger.info("model-router[model_request]: explicit pin in effect — standing down")
+            return None
         try:
             text = (user_message or "").strip()
             if not text:

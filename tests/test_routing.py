@@ -112,6 +112,18 @@ def test_model_request_crosses_provider():
     assert r["base_url"] is None and r["api_mode"] is None
 
 
+def test_model_request_respects_explicit_pin():
+    hard = "Prove termination and analyse worst-case complexity, then redesign it."
+    req = {"model": "kimi-for-coding", "provider": "kimi-coding"}
+    # respect_explicit_model on (default): a pinned model stands the router down
+    on = make_model_request_middleware(_cfg(respect_explicit_model=True))
+    assert on(request=req, user_message=hard, explicit_model=True) is None
+    assert on(request=req, user_message=hard) is not None          # no pin → routes
+    # respect_explicit_model off: the router overrides even a pin
+    off = make_model_request_middleware(_cfg(respect_explicit_model=False))
+    assert off(request=req, user_message=hard, explicit_model=True) is not None
+
+
 def test_model_request_noop_on_easy_prompt():
     mw = make_model_request_middleware(_cfg())
     req = {"model": "kimi-for-coding", "provider": "kimi-coding"}
