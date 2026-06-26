@@ -5,6 +5,6 @@
 set -e
 ROOT="$(git rev-parse --show-toplevel)"
 NEW="$(python3 "$ROOT/scripts/bump_version.py" patch)"
-git add "$ROOT/VERSION" "$ROOT/pyproject.toml" "$ROOT/plugin.yaml" \
+git add "$ROOT/VERSION" "$ROOT/pyproject.toml" "$ROOT/hermes_model_router/plugin.yaml" \
         "$ROOT/hermes_model_router/__init__.py"
 echo "pre-commit: bumped version to $NEW"

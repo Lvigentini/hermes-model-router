@@ -25,9 +25,12 @@ prompt ─► determination.classify()  ─►  tier + confidence + explainable 
 
 ## Install (local)
 
+The loadable plugin **is the `hermes_model_router/` package dir** (it holds `plugin.yaml` +
+`__init__.py`). Symlink that dir into your Hermes plugins folder:
+
 ```bash
 git clone <your-remote> ~/_coding/hermes-model-router
-ln -s ~/_coding/hermes-model-router ~/.hermes/plugins/hermes-model-router
+ln -s ~/_coding/hermes-model-router/hermes_model_router ~/.hermes/plugins/hermes-model-router
 ```
 
 Enable it and configure tiers in your Hermes `config.yaml`:
@@ -38,14 +41,19 @@ plugins:
 
 model_router:
   enabled: true
+  mode: auto                     # auto | announce (show, don't switch) | off
   gate_confidence: 0.55          # below this confidence, leave the model unchanged
-  respect_explicit_model: true   # an explicit /model selection always wins
-  same_provider_only: true       # see docs/PLAN.md "Seam finding"
+  respect_explicit_model: true   # an explicit /model selection should win (see docs/UI.md)
+  same_provider_only: true       # see docs/LIMITATIONS.md "Seam finding"
   tiers:
     cheap:     { provider: kimi-coding,  model: kimi-for-coding }
     smart:     { provider: openai-codex, model: gpt-5.5 }
     reasoning: { provider: anthropic,    model: claude-opus-4-8 }
 ```
+
+- **Showing/overriding the decision, and listing available models:** [`docs/UI.md`](docs/UI.md).
+- **Live cross-provider routing (patch a local Hermes / open the PR):** [`docs/UPSTREAM_PATCHING.md`](docs/UPSTREAM_PATCHING.md).
+- Validate your tier models exist: `python -m hermes_model_router.models`.
 
 > **Cross-provider note:** Hermes' `llm_request` middleware can only swap the model *within the current
 > provider*; it can't re-authenticate to a different provider mid-turn. So with `same_provider_only:

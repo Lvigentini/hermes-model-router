@@ -45,7 +45,10 @@ def make_llm_request_middleware(cfg: RouterConfig):
     """Build the middleware callable bound to ``cfg``."""
 
     def llm_request(request: Dict[str, Any] = None, **context: Any) -> Optional[Dict[str, Any]]:
-        if not cfg.enabled or not isinstance(request, dict):
+        # Fires on every Hermes build. Handles `announce` logging (for both
+        # same- and cross-provider) and same-provider auto swaps. Cross-provider
+        # auto swaps are left to the `model_request` seam.
+        if not cfg.observing or not isinstance(request, dict):
             return None
         try:
             text = _latest_user_text(request)
@@ -64,20 +67,26 @@ def make_llm_request_middleware(cfg: RouterConfig):
             if route is None:
                 return None
 
-            if route.cross_provider:
-                # Cannot re-auth from here; surface it for the manager/hook path.
+            if not cfg.active:  # announce mode — show, don't switch
                 logger.info(
-                    "model-router: %s → would route to %s/%s but cross-provider "
-                    "from %s is suppressed (%s)",
-                    route.tier, route.provider, route.model,
-                    current_provider, route.reason,
+                    "model-router[announce]: %s (conf %.2f) suggests %s/%s (current %s/%s)",
+                    route.tier, route.confidence, route.provider, route.model,
+                    current_provider, current_model,
                 )
-                return {
-                    "source": "hermes-model-router",
-                    "reason": f"suppressed cross-provider → {route.provider}/{route.model}",
-                }
+                return {"source": "hermes-model-router",
+                        "reason": f"announce → {route.provider}/{route.model}"}
 
-            # Same-provider model swap — safe to apply.
+            if route.cross_provider:
+                # Handled by the model_request seam on a patched build; here we
+                # can't re-auth, so just surface the intent.
+                logger.info(
+                    "model-router: %s → %s/%s needs the model_request seam "
+                    "(cross-provider); not switched here", route.tier,
+                    route.provider, route.model,
+                )
+                return {"source": "hermes-model-router",
+                        "reason": f"deferred cross-provider → {route.provider}/{route.model}"}
+
             new_request = dict(request)
             new_request["model"] = route.model
             logger.info(
@@ -107,7 +116,9 @@ def make_model_request_middleware(cfg: RouterConfig):
 
     def model_request(request: Dict[str, Any] = None, user_message: str = "",
                       **context: Any) -> Optional[Dict[str, Any]]:
-        if not cfg.enabled or not isinstance(request, dict):
+        # Only switches in `auto` mode; `announce` logging is done by the
+        # always-present llm_request path to avoid double-reporting.
+        if not cfg.active or not isinstance(request, dict):
             return None
         try:
             text = (user_message or "").strip()

@@ -119,6 +119,28 @@ def test_model_request_noop_on_easy_prompt():
     assert mw(request=req, user_message="what is the capital of France?") is None
 
 
+def test_announce_mode_does_not_switch():
+    mw = make_llm_request_middleware(_cfg(mode="announce"))
+    req = {"model": "kimi-for-coding", "provider": "kimi-coding",
+           "messages": [{"role": "user", "content":
+                         "Write a SQL query for the second highest salary per department."}]}
+    out = mw(request=req, provider="kimi-coding", model="kimi-for-coding")
+    # announces (trace) but never rewrites the request
+    assert out is not None and "request" not in out
+    # model_request stays silent in announce mode (no double report)
+    assert make_model_request_middleware(_cfg(mode="announce"))(
+        request={"model": "kimi-for-coding", "provider": "kimi-coding"},
+        user_message="Prove and analyse worst-case complexity, then redesign it.") is None
+
+
+def test_off_mode_is_silent():
+    for make in (make_llm_request_middleware, make_model_request_middleware):
+        mw = make(_cfg(mode="off"))
+        assert mw(request={"model": "x", "provider": "kimi-coding",
+                           "messages": [{"role": "user", "content": "design a distributed system"}]},
+                  provider="kimi-coding", model="x", user_message="design a distributed system") is None
+
+
 def test_middleware_noop_on_empty_and_disabled():
     assert make_llm_request_middleware(_cfg())(request={"messages": []},
                                               provider="kimi-coding", model="x") is None

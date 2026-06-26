@@ -20,6 +20,13 @@ DEFAULT_TIERS: Dict[str, Dict[str, str]] = {
 
 DEFAULTS: Dict[str, Any] = {
     "enabled": True,
+    # User-control dial:
+    #   "auto"     — classify and switch the model automatically.
+    #   "announce" — classify and LOG the suggestion, but DO NOT switch (the user
+    #                keeps their default model; they "make the call"). Pair with
+    #                `/footer` to see the active model.
+    #   "off"      — do nothing (fully manual).
+    "mode": "auto",
     # Below this confidence, leave the turn on its current model (no-match gate).
     "gate_confidence": 0.55,
     # An explicit /model selection or per-message override always wins.
@@ -36,6 +43,7 @@ DEFAULTS: Dict[str, Any] = {
 @dataclass
 class RouterConfig:
     enabled: bool = True
+    mode: str = "auto"            # auto | announce | off
     gate_confidence: float = 0.55
     respect_explicit_model: bool = True
     same_provider_only: bool = True
@@ -45,13 +53,27 @@ class RouterConfig:
     def from_mapping(cls, raw: Dict[str, Any] | None) -> "RouterConfig":
         raw = dict(DEFAULTS, **(raw or {}))
         tiers = {**DEFAULT_TIERS, **(raw.get("tiers") or {})}
+        mode = str(raw.get("mode", "auto")).lower()
+        if mode not in ("auto", "announce", "off"):
+            mode = "auto"
         return cls(
             enabled=bool(raw.get("enabled", True)),
+            mode=mode,
             gate_confidence=float(raw.get("gate_confidence", 0.55)),
             respect_explicit_model=bool(raw.get("respect_explicit_model", True)),
             same_provider_only=bool(raw.get("same_provider_only", True)),
             tiers=tiers,
         )
+
+    @property
+    def active(self) -> bool:
+        """True when the router should actually switch models."""
+        return self.enabled and self.mode == "auto"
+
+    @property
+    def observing(self) -> bool:
+        """True when the router should classify (to switch or just announce)."""
+        return self.enabled and self.mode in ("auto", "announce")
 
     def target_for(self, tier: str) -> Dict[str, str]:
         return self.tiers.get(tier, self.tiers["smart"])

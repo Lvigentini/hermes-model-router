@@ -39,7 +39,7 @@ def _sub(rel: str, pattern: str, repl: str) -> None:
 
 
 _sub("pyproject.toml", r'version = "[^"]+"', f'version = "{new}"')
-_sub("plugin.yaml", r'version: "[^"]+"', f'version: "{new}"')
+_sub("hermes_model_router/plugin.yaml", r'version: "[^"]+"', f'version: "{new}"')
 _sub("hermes_model_router/__init__.py", r'__version__ = "[^"]+"', f'__version__ = "{new}"')
 
 print(new)

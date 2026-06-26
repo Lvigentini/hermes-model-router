@@ -12,7 +12,7 @@ import logging
 from .config import RouterConfig
 from .middleware import make_llm_request_middleware, make_model_request_middleware
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __all__ = ["register", "RouterConfig", "__version__"]
 
 logger = logging.getLogger("hermes_model_router")
@@ -43,6 +43,6 @@ def register(ctx) -> None:
     # llm_request: same-provider model swap — works on stock Hermes today.
     ctx.register_middleware("llm_request", make_llm_request_middleware(cfg))
     logger.info(
-        "hermes-model-router registered (gate=%.2f, same_provider_only=%s, tiers=%s)",
-        cfg.gate_confidence, cfg.same_provider_only, list(cfg.tiers),
+        "hermes-model-router registered (mode=%s, gate=%.2f, same_provider_only=%s, tiers=%s)",
+        cfg.mode, cfg.gate_confidence, cfg.same_provider_only, list(cfg.tiers),
     )

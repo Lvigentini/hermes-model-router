@@ -1,5 +1,5 @@
 name: hermes-model-router
-version: "0.1.2"
+version: "0.1.3"
 kind: standalone
 description: "Local, no-LLM-call complexity router for Hermes. Classifies each turn into a tier (cheap/smart/reasoning) with a transparent weighted heuristic (sub-ms, zero ML, zero network) and swaps to a tier-appropriate model via llm_request middleware. Same-provider model swaps apply directly; cross-provider routing is left to the goal-manager/delegation path (see docs/PLAN.md). Config under the top-level `model_router:` key."
 author: "lorenzo (cogentixai)"
