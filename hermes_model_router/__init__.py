@@ -12,7 +12,7 @@ import logging
 from .config import RouterConfig
 from .middleware import make_llm_request_middleware, make_model_request_middleware
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 __all__ = ["register", "RouterConfig", "__version__"]
 
 logger = logging.getLogger("hermes_model_router")

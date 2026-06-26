@@ -1,3 +1,108 @@
+diff --git a/agent/conversation_loop.py b/agent/conversation_loop.py
+index 05d1977..b3d25c0 100644
+--- a/agent/conversation_loop.py
++++ b/agent/conversation_loop.py
+@@ -368,6 +368,61 @@ def _get_continuation_prompt(is_partial_stub: bool, dropped_tools: Optional[List
+         )
+ 
+ 
++def _maybe_route_turn(agent, user_message: str) -> None:
++    """In-process per-turn router (TUI/CLI/oneshot).
++
++    Ask any registered ``model_request`` middleware for a route and apply it with
++    a live ``switch_model`` BEFORE the first API call of the turn. No-op when no
++    middleware is registered. The agent's ``_fallback_chain`` is left untouched,
++    so an out-of-credits routed model still falls back down the config chain.
++    Fail-open: any error keeps the current model.
++    """
++    try:
++        from hermes_cli.plugins import has_middleware
++        if not has_middleware("model_request"):
++            return
++        from hermes_cli.middleware import apply_model_request_middleware
++
++        res = apply_model_request_middleware(
++            {
++                "model": agent.model,
++                "provider": agent.provider,
++                "base_url": getattr(agent, "base_url", None),
++                "api_mode": getattr(agent, "api_mode", None),
++            },
++            user_message=user_message or "",
++            explicit_model=bool(getattr(agent, "_model_pinned", False)),
++        )
++        if not res.changed or not isinstance(res.payload, dict):
++            return
++
++        sel = res.payload
++        new_model = sel.get("model") or agent.model
++        new_provider = sel.get("provider") or agent.provider
++        if new_model == agent.model and new_provider == agent.provider:
++            return
++
++        from hermes_cli.runtime_provider import resolve_runtime_provider
++        rp = resolve_runtime_provider(requested=new_provider, target_model=new_model)
++        if not (rp.get("api_key") or rp.get("command")):
++            logger.warning(
++                "model-router: no credentials for %s; keeping %s/%s",
++                new_provider, agent.provider, agent.model,
++            )
++            return
++
++        agent.switch_model(
++            new_model=new_model,
++            new_provider=new_provider,
++            api_key=rp.get("api_key", "") or "",
++            base_url=rp.get("base_url", "") or "",
++            api_mode=rp.get("api_mode", "") or "",
++        )
++        logger.info("model-router: turn routed -> %s/%s", new_provider, new_model)
++    except Exception as exc:  # never break the turn
++        logger.warning("model-router in-process routing skipped: %s", exc)
++
++
+ def run_conversation(
+     agent,
+     user_message: str,
+@@ -432,6 +487,14 @@ def run_conversation(
+     _plugin_user_context = _ctx.plugin_user_context
+     _ext_prefetch_cache = _ctx.ext_prefetch_cache
+ 
++    # ── Pre-model-selection (in-process paths: TUI / CLI / oneshot) ──
++    # The gateway routes earlier in `_resolve_turn_agent_config` (cache-friendly,
++    # before the agent is built); gateway-built agents carry `gateway_session_key`
++    # and are skipped here to avoid double-routing. On the in-process paths the
++    # agent persists across turns, so we route per-turn with a live switch_model.
++    if not getattr(agent, "gateway_session_key", None):
++        _maybe_route_turn(agent, user_message)
++
+     # Main conversation loop counters (pure locals consumed by the loop below).
+     api_call_count = 0
+     final_response = None
+diff --git a/cli.py b/cli.py
+index bc5ced0..65b5ec4 100644
+--- a/cli.py
++++ b/cli.py
+@@ -6694,6 +6694,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
+                     base_url=result.base_url,
+                     api_mode=result.api_mode,
+                 )
++                # Explicit user pin: an in-process per-turn router (model_request
++                # middleware) honours this and stands down (respect_explicit_model).
++                self.agent._model_pinned = True
+             except Exception as exc:
+                 _cprint(f"  ⚠ Agent swap failed ({exc}); change applied to next session.")
+ 
+@@ -6948,6 +6951,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
+                     base_url=result.base_url,
+                     api_mode=result.api_mode,
+                 )
++                # Explicit user pin: an in-process per-turn router (model_request
++                # middleware) honours this and stands down (respect_explicit_model).
++                self.agent._model_pinned = True
+             except Exception as exc:
+                 _cprint(f"  ⚠ Agent swap failed ({exc}); change applied to next session.")
+ 
 diff --git a/gateway/run.py b/gateway/run.py
 index e2a1b88..e987dce 100644
 --- a/gateway/run.py

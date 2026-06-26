@@ -27,6 +27,16 @@ It reuses the existing middleware framework (`apply_*_request_middleware`, `VALI
 absent middleware keeps the session's primary route. Zero overhead when no `model_request` middleware
 is registered (early `_has_middleware` return).
 
+**Coverage — gateway *and* in-process.** The gateway routes at `_resolve_turn_agent_config` (before the
+agent is built, cache-friendly). The interactive TUI / CLI / oneshot build a persistent agent and don't
+hit that path, so the patch also adds an in-process seam in `agent/conversation_loop.run_conversation`:
+before the first API call of a turn it runs the same `model_request` middleware and applies the choice
+via the existing `agent.switch_model(...)` primitive (the one `/model` uses). It is gated to skip when
+`gateway_session_key` is set, so the two never double-route. `cli.py` sets `agent._model_pinned` on a
+user `/model` so the in-process router stands down on a pin (mirrors the gateway's `explicit_model`).
+Crucially, `switch_model` leaves `_fallback_chain` intact, so an out-of-credits routed model still
+falls back down the configured chain.
+
 ### Why middleware, not a hook
 Hermes hooks are fire-and-forget observers; they can't change the route. Request middleware is the
 established seam for behaviour-changing rewrites (`tool_request`, `llm_request`), so `model_request`

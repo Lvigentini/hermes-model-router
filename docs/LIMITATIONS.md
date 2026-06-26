@@ -3,7 +3,12 @@
 This documents a constraint **verified against the Hermes source**, and what it means in practice for
 the original routing plan. Read alongside the "Seam finding" section of [`PLAN.md`](PLAN.md).
 
-## The limit (one sentence)
+> **Update:** this limit applies to **stock** Hermes. The patch in [`../upstream/`](../upstream/) (now
+> applied to the local install) closes it via the `model_request` seam — cross-provider routing works on
+> **both** the gateway and the in-process (TUI/CLI/oneshot) paths. The section below documents the stock
+> behaviour and why the patch is needed.
+
+## The limit (one sentence, stock Hermes)
 
 A Hermes plugin can rewrite the LLM **request body** (via `llm_request` middleware) but **cannot
 change which provider/account the turn is sent to** — the provider, transport, and credentials are
@@ -48,16 +53,18 @@ correct rather than sending an Opus model name to Kimi's endpoint.
 3. **Single-provider tiering.** If all tiers live under one provider (e.g. OpenRouter, or a local
    proxy), the middleware reroutes freely — at the cost of not using the per-provider OAuth logins.
 
-## The clean fix (DRAFTED — see `upstream/`)
+## The fix (DRAFTED + applied locally — see `upstream/`)
 
-The fix is a small **upstream PR to `NousResearch/hermes-agent`** adding a `model_request`
-(pre-model-selection) middleware seam **inside** `gateway/run.py:_resolve_turn_agent_config`, before
-credentials are bound, so a plugin can pick the provider + model and Hermes re-resolves credentials via
-`resolve_runtime_provider`. This turns transparent per-turn cross-provider routing from "impossible via
-plugin" into a registered middleware — decided locally, at the gateway, with **no LLM call**.
+A small **PR to `NousResearch/hermes-agent`** adds the `model_request` (pre-model-selection) seam at
+**two** points so a plugin can pick the provider + model and Hermes re-resolves credentials via
+`resolve_runtime_provider`, decided locally with **no LLM call**:
+- `gateway/run.py:_resolve_turn_agent_config` — the gateway path (before the agent is built).
+- `agent/conversation_loop.run_conversation` — the **in-process** path (TUI/CLI/oneshot), applied via
+  the existing `agent.switch_model(...)`, gated to skip gateway-built agents (no double-route).
+  `cli.py` tags a user `/model` pin so the in-process router stands down.
 
-It is drafted and verified in [`../upstream/`](../upstream/): the patch applies cleanly to
-hermes-agent `main`, the seam round-trips a re-route in a functional check, and this plugin already
-registers the matching `model_request` middleware (so cross-provider routing activates the moment a
-Hermes build with the seam is in use). Until the PR merges, `same_provider_only` keeps stock behaviour
-correct. See [`PLAN.md`](PLAN.md) Roadmap.
+Verified: the patch applies cleanly to `main`, the seam round-trips a re-route, and an out-of-credits
+routed model still falls back down the config chain (`switch_model` preserves `_fallback_chain`). This
+plugin registers the matching `model_request` middleware, so cross-provider routing is live wherever a
+seam-equipped Hermes runs. On stock Hermes, `same_provider_only` keeps behaviour correct.
+See [`PLAN.md`](PLAN.md) Roadmap and [`UPSTREAM_PATCHING.md`](UPSTREAM_PATCHING.md).

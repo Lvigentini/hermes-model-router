@@ -96,10 +96,12 @@ model_router:
 
 ## Roadmap
 - **v0.1** heuristic core + same-provider middleware router + config-only manager.
-- **v0.2** ← here. Upstream `model_request` (pre-model-selection) seam **drafted** in
-  [`../upstream/`](../upstream/) (patch applies cleanly to hermes-agent `main`; functionally verified).
-  Plugin registers a `model_request` middleware → **true cross-provider per-turn routing**, decided
-  locally at the gateway with no LLM call. Lands once the upstream PR merges.
+- **v0.2** ← here. Upstream `model_request` (pre-model-selection) seam in [`../upstream/`](../upstream/),
+  covering **both** the gateway (`_resolve_turn_agent_config`) and the **in-process** TUI/CLI/oneshot
+  path (`conversation_loop.run_conversation` via `switch_model`). Plugin registers a `model_request`
+  middleware → **true cross-provider per-turn routing**, decided locally with no LLM call; pins
+  respected; fallback chain preserved. Patch applies cleanly to `main` and is verified end-to-end on the
+  in-process path. Open the upstream PR to make it permanent (else re-apply after `hermes update`).
 - **v0.3** optional local classifier (RouteLLM / ModernBERT) behind the `classify()` signature;
   per-signal weight learning from `eval/prompts.jsonl`.
 - **out of scope (YAGNI):** cross-profile binding router, Fusion/MoA auto-invoke, cost dashboards.
