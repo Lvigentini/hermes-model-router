@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-model-router"
-version = "0.1.6"
+version = "0.1.7"
 description = "Local, no-LLM-call complexity router for the Hermes agent (Nous Research)."
 readme = "README.md"
 requires-python = ">=3.10"
