@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional
 
 from .config import RouterConfig
 from .determination import classify
-from .tiers import resolve_route
+from .tiers import resolve_route, directive_route
 
 logger = logging.getLogger("hermes_model_router")
 
@@ -58,12 +58,17 @@ def make_llm_request_middleware(cfg: RouterConfig):
             current_provider = str(context.get("provider") or "")
             current_model = str(context.get("model") or request.get("model") or "")
 
-            decision = classify(text, ctx=context)
-            route = resolve_route(
-                decision, cfg,
-                current_provider=current_provider,
-                current_model=current_model,
+            # Explicit in-message directive ("use opus to …") wins over the heuristic.
+            route = directive_route(
+                text, cfg, current_provider=current_provider, current_model=current_model,
             )
+            if route is None:
+                decision = classify(text, ctx=context)
+                route = resolve_route(
+                    decision, cfg,
+                    current_provider=current_provider,
+                    current_model=current_model,
+                )
             if route is None:
                 return None
 
@@ -125,10 +130,6 @@ def make_model_request_middleware(cfg: RouterConfig):
         # always-present llm_request path to avoid double-reporting.
         if not cfg.active or not isinstance(request, dict):
             return None
-        # User pinned a model (e.g. `/model`) and asked us to respect it.
-        if cfg.respect_explicit_model and context.get("explicit_model"):
-            logger.info("model-router[model_request]: explicit pin in effect — standing down")
-            return None
         try:
             text = (user_message or "").strip()
             if not text:
@@ -137,13 +138,23 @@ def make_model_request_middleware(cfg: RouterConfig):
             cur_provider = str(request.get("provider") or "")
             cur_model = str(request.get("model") or "")
 
-            decision = classify(text, ctx=context)
-            route = resolve_route(
-                decision, cfg,
-                current_provider=cur_provider,
-                current_model=cur_model,
-                allow_cross_provider=True,   # this seam can re-auth
+            # Explicit in-message directive ("use opus to …") wins over BOTH the
+            # heuristic and a session pin — the user is telling us directly.
+            route = directive_route(
+                text, cfg, current_provider=cur_provider, current_model=cur_model,
             )
+            if route is None:
+                # No directive — honour a session pin, else classify.
+                if cfg.respect_explicit_model and context.get("explicit_model"):
+                    logger.info("model-router[model_request]: explicit pin in effect — standing down")
+                    return None
+                decision = classify(text, ctx=context)
+                route = resolve_route(
+                    decision, cfg,
+                    current_provider=cur_provider,
+                    current_model=cur_model,
+                    allow_cross_provider=True,   # this seam can re-auth
+                )
             if route is None:
                 return None
 

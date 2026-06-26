@@ -21,7 +21,8 @@ and eval coverage.
 | --- | --- | --- |
 | `hermes_model_router/determination.py` | `classify(text, ctx) -> Decision`. Pure, local, no API. `WEIGHTS`, `THRESHOLDS`, and the vocab lists (`_REASONING_MARKERS`, `_TASK_VERBS`, `_TECHNICAL_TERMS`, `_SIMPLE_INDICATORS`, `_CODE_PATTERNS`). | **Tuning routing accuracy** (most common task). |
 | `hermes_model_router/config.py` | `RouterConfig`, `DEFAULT_TIERS`, `mode`/`gate_confidence`/`respect_explicit_model`/`same_provider_only`, `target_for`, `fallback_for`. | Adding config knobs or defaults. |
-| `hermes_model_router/tiers.py` | `resolve_route()` + `RouteTarget` (carries `fallback`, `model_changed`, `cross_provider`). Tier→model policy + gate. | Changing routing policy. |
+| `hermes_model_router/tiers.py` | `resolve_route()` (heuristic) + `directive_route()` (explicit "use opus" override) + `RouteTarget` (carries `fallback`, `model_changed`, `cross_provider`). Tier→model policy + gate. | Changing routing policy. |
+| `hermes_model_router/directives.py` | `detect_directive(text, aliases)` + `BUILTIN_ALIASES`. Local regex for explicit in-message model requests. | Adding model nicknames / directive phrasings. |
 | `hermes_model_router/middleware.py` | `make_llm_request_middleware` (same-provider swap + `announce`), `make_model_request_middleware` (cross-provider + emits per-tier `fallback`), `_latest_user_text`. | Changing how decisions are applied. |
 | `hermes_model_router/models.py` | `available_models(provider)`, `validate_tiers(cfg)`, CLI. Uses Hermes' `curated_models_for_provider`. | Validating tier models exist. |
 | `hermes_model_router/__init__.py` | `register(ctx)` — reads `model_router:` config via `hermes_cli.config`, registers both middlewares. `__version__`. | Rarely. |

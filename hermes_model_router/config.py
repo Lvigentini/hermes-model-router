@@ -36,6 +36,12 @@ DEFAULTS: Dict[str, Any] = {
     # When true, only same-provider model swaps are applied; cross-provider
     # routing is logged but left to the manager/upstream-hook path.
     "same_provider_only": True,
+    # Honour an explicit in-message model directive ("use opus to …"), which
+    # overrides the heuristic and any session pin for that turn.
+    "directives": True,
+    # Extra name → {provider, model} aliases for directives. Merged on top of the
+    # built-ins and the configured tier names.
+    "aliases": {},
     "tiers": DEFAULT_TIERS,
 }
 
@@ -47,6 +53,8 @@ class RouterConfig:
     gate_confidence: float = 0.55
     respect_explicit_model: bool = True
     same_provider_only: bool = True
+    directives: bool = True
+    aliases: Dict[str, Dict[str, str]] = field(default_factory=dict)
     tiers: Dict[str, Dict[str, str]] = field(default_factory=lambda: dict(DEFAULT_TIERS))
 
     @classmethod
@@ -62,8 +70,30 @@ class RouterConfig:
             gate_confidence=float(raw.get("gate_confidence", 0.55)),
             respect_explicit_model=bool(raw.get("respect_explicit_model", True)),
             same_provider_only=bool(raw.get("same_provider_only", True)),
+            directives=bool(raw.get("directives", True)),
+            aliases=dict(raw.get("aliases") or {}),
             tiers=tiers,
         )
+
+    def resolved_aliases(self) -> Dict[str, Dict[str, str]]:
+        """Built-in nicknames + configured tier names/models + user aliases."""
+        from .directives import BUILTIN_ALIASES
+        out: Dict[str, Dict[str, str]] = dict(BUILTIN_ALIASES)
+        for tier, tgt in self.tiers.items():
+            provider, model = tgt.get("provider"), tgt.get("model")
+            if provider and model:
+                entry = {"provider": provider, "model": model}
+                out[tier.lower()] = entry           # "cheap" / "smart" / "reasoning"
+                out[str(model).lower()] = entry     # the exact model id
+        out.update(self.aliases or {})              # user overrides win
+        return out
+
+    def fallback_for_target(self, provider: str, model: str) -> list:
+        """Return the per-tier fallback for whichever tier matches (provider, model)."""
+        for tier, tgt in self.tiers.items():
+            if tgt.get("provider") == provider and tgt.get("model") == model:
+                return self.fallback_for(tier)
+        return []
 
     @property
     def active(self) -> bool:

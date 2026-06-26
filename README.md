@@ -108,6 +108,25 @@ when a pin is active. (This relies on the upstream seam; the tag is part of the 
 On **stock** Hermes the same-provider `llm_request` path can't see the pin, so for strict manual
 control on an unpatched build use `mode: announce` or `off`.
 
+## Explicit directives ("use opus to …")
+
+If the user names a model in the message — *"use opus to refactor this"*, *"with gpt-5.5, …"*,
+*"ask gemini to summarise"*, *"switch to kimi for this"* — the router honours it directly for that turn,
+**overriding both the heuristic and any session pin**. Detection is local (a regex requiring an
+instruction verb before a known model name, so *"explain the opera Opus 27"* does **not** trigger it).
+
+Names resolve from a built-in nickname table (opus / sonnet / haiku / gpt-5.5 / chatgpt / codex / kimi /
+gemini), your configured tier names (`cheap` / `smart` / `reasoning`) and model ids, plus any
+`model_router.aliases` you add. Toggle with `model_router.directives: false`.
+
+```yaml
+model_router:
+  directives: true                 # honour "use <model>…" in the message (default)
+  aliases:                         # optional extra names
+    big:  { provider: anthropic,    model: claude-opus-4-8 }
+    fast: { provider: kimi-coding,  model: kimi-for-coding }
+```
+
 - **Showing/overriding the decision, and listing available models:** [`docs/UI.md`](docs/UI.md).
 - **Live cross-provider routing (patch a local Hermes / open the PR):** [`docs/UPSTREAM_PATCHING.md`](docs/UPSTREAM_PATCHING.md).
 - Validate your tier models exist: `python -m hermes_model_router.models`.

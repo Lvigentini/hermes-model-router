@@ -12,6 +12,38 @@ from typing import List, Optional
 
 from .config import RouterConfig
 from .determination import Decision
+from .directives import detect_directive
+
+
+def directive_route(
+    text: str,
+    cfg: RouterConfig,
+    *,
+    current_provider: str,
+    current_model: str,
+) -> Optional["RouteTarget"]:
+    """Return a RouteTarget for an explicit in-message directive, or None.
+
+    Highest priority: overrides the heuristic and any session pin. Confidence is
+    1.0 (the user told us). Returns None when no directive is present or it asks
+    for the model we're already on with no tier fallback to apply.
+    """
+    if not cfg.directives:
+        return None
+    d = detect_directive(text, cfg.resolved_aliases())
+    if not d:
+        return None
+    provider, model = d["provider"], d["model"]
+    cross_provider = provider != (current_provider or "")
+    model_changed = model != current_model or cross_provider
+    fallback = cfg.fallback_for_target(provider, model)
+    if not model_changed and not fallback:
+        return None
+    return RouteTarget(
+        provider=provider, model=model, tier="directive",
+        confidence=1.0, reason=f"explicit directive: {d['phrase']}",
+        cross_provider=cross_provider, fallback=fallback, model_changed=model_changed,
+    )
 
 
 @dataclass

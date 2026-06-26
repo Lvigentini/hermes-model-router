@@ -176,6 +176,45 @@ def test_model_request_emits_fallback_with_cross_provider_switch():
     assert r["fallback"] == [{"provider": "openai-codex", "model": "gpt-5.5"}]
 
 
+def test_detect_directive_requires_a_verb():
+    from hermes_model_router.directives import detect_directive, BUILTIN_ALIASES
+    a = BUILTIN_ALIASES
+    assert detect_directive("use opus to refactor this", a)["model"] == "claude-opus-4-8"
+    assert detect_directive("with gpt-5.5 please", a)["model"] == "gpt-5.5"
+    assert detect_directive("ask gemini to summarise", a)["model"] == "gemini-3-pro"
+    assert detect_directive("switch to kimi for this", a)["provider"] == "kimi-coding"
+    # plain topical mention with no instruction verb → no directive
+    assert detect_directive("explain the opera Opus 27", a) is None
+    assert detect_directive("what is the capital of France?", a) is None
+
+
+def test_directive_overrides_heuristic_in_model_request():
+    mw = make_model_request_middleware(_cfg())          # default tiers, directives on
+    # a CHEAP prompt, but the user explicitly asks for opus → route to opus
+    out = mw(request={"model": "kimi-for-coding", "provider": "kimi-coding"},
+             user_message="use opus to answer: what is 2+2?")
+    assert out["request"]["provider"] == "anthropic"
+    assert out["request"]["model"] == "claude-opus-4-8"
+    assert "directive" in out["reason"]
+
+
+def test_directive_overrides_session_pin():
+    mw = make_model_request_middleware(_cfg(respect_explicit_model=True))
+    # even with a pin in effect, an in-message directive wins
+    out = mw(request={"model": "kimi-for-coding", "provider": "kimi-coding"},
+             user_message="actually, use gpt-5.5 for this one",
+             explicit_model=True)
+    assert out is not None and out["request"]["model"] == "gpt-5.5"
+
+
+def test_directives_can_be_disabled():
+    mw = make_model_request_middleware(_cfg(directives=False))
+    out = mw(request={"model": "kimi-for-coding", "provider": "kimi-coding"},
+             user_message="use opus to answer: what is 2+2?")
+    # directives off → falls back to heuristic (cheap prompt → stays on kimi)
+    assert out is None
+
+
 def test_model_request_noop_on_easy_prompt():
     mw = make_model_request_middleware(_cfg())
     req = {"model": "kimi-for-coding", "provider": "kimi-coding"}
