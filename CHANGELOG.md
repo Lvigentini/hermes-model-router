@@ -10,3 +10,7 @@ commit warrants it.
   map, and `llm_request` middleware (same-provider model swap).
 - Verified Hermes seam limit (cross-provider routing not possible via middleware);
   documented in `docs/LIMITATIONS.md`.
+- Added `model_request` middleware (cross-provider live routing) + drafted the
+  upstream `pre_model_selection` seam patch in `upstream/` (applies cleanly to
+  hermes-agent `main`, functionally verified). Activates when a Hermes build with
+  the seam is in use; no-op on stock builds.

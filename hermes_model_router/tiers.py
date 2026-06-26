@@ -30,13 +30,15 @@ def resolve_route(
     *,
     current_provider: str,
     current_model: str,
+    allow_cross_provider: bool = False,
 ) -> Optional[RouteTarget]:
     """Return the RouteTarget to apply, or None to leave the turn untouched.
 
     None is returned when: routing is disabled, the confidence gate isn't met,
-    the target equals the current model, or a cross-provider hop is required but
-    ``same_provider_only`` forbids it (the middleware can't re-auth — see
-    docs/PLAN.md).
+    or the target equals the current model. A cross-provider hop is returned as
+    a suppressed RouteTarget unless ``allow_cross_provider`` is True — the
+    ``llm_request`` seam can't re-auth (so suppress), but the ``model_request``
+    seam can (so allow). See docs/PLAN.md and docs/LIMITATIONS.md.
     """
     if not cfg.enabled:
         return None
@@ -51,7 +53,7 @@ def resolve_route(
     cross_provider = provider != (current_provider or "")
     if model == current_model and not cross_provider:
         return None  # already where we want to be
-    if cross_provider and cfg.same_provider_only:
+    if cross_provider and not allow_cross_provider and cfg.same_provider_only:
         return RouteTarget(
             provider=provider, model=model, tier=decision.tier,
             confidence=decision.confidence,

@@ -2,7 +2,9 @@
 
 from hermes_model_router.config import RouterConfig
 from hermes_model_router.determination import classify, Decision
-from hermes_model_router.middleware import make_llm_request_middleware, _latest_user_text
+from hermes_model_router.middleware import (
+    make_llm_request_middleware, make_model_request_middleware, _latest_user_text,
+)
 from hermes_model_router.tiers import resolve_route
 
 
@@ -85,6 +87,36 @@ def test_middleware_passes_through_cross_provider():
     out = mw(request=req, provider="kimi-coding", model="kimi-for-coding")
     # cross-provider => no request rewrite, just a trace reason
     assert out is not None and "request" not in out
+
+
+def test_resolve_route_allows_cross_provider_when_permitted():
+    cfg = _cfg()
+    d = classify("Prove termination and analyse worst-case complexity, then redesign it.")  # reasoning
+    r = resolve_route(d, cfg, current_provider="kimi-coding", current_model="kimi-for-coding",
+                      allow_cross_provider=True)
+    assert r is not None and r.cross_provider and r.provider == "anthropic"
+    assert "suppressed" not in r.reason
+
+
+# ── model_request middleware (the pre-model-selection seam consumer) ──────────
+
+def test_model_request_crosses_provider():
+    mw = make_model_request_middleware(_cfg())
+    req = {"model": "kimi-for-coding", "provider": "kimi-coding",
+           "base_url": "https://api.kimi.com/coding", "api_mode": "chat_completions"}
+    out = mw(request=req, user_message="Prove termination and analyse worst-case complexity, then redesign it.")
+    assert out is not None
+    r = out["request"]
+    assert r["provider"] == "anthropic" and r["model"] == "claude-opus-4-8"
+    # stale endpoint fields cleared so the gateway re-resolves them
+    assert r["base_url"] is None and r["api_mode"] is None
+
+
+def test_model_request_noop_on_easy_prompt():
+    mw = make_model_request_middleware(_cfg())
+    req = {"model": "kimi-for-coding", "provider": "kimi-coding"}
+    # cheap prompt → already on the cheap target → no change
+    assert mw(request=req, user_message="what is the capital of France?") is None
 
 
 def test_middleware_noop_on_empty_and_disabled():

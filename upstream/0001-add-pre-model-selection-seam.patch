@@ -1,0 +1,186 @@
+diff --git a/gateway/run.py b/gateway/run.py
+index e2a1b88..11a290f 100644
+--- a/gateway/run.py
++++ b/gateway/run.py
+@@ -2880,6 +2880,76 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
+ 
+         return model, runtime_kwargs
+ 
++    def _apply_model_selection(self, user_message: str, model: str, runtime: dict) -> tuple[str, dict]:
++        """Run ``model_request`` middleware and apply any re-route.
++
++        Returns ``(model, runtime)`` — unchanged when no middleware is
++        registered or the route is left as-is. On a cross-provider re-route the
++        chosen provider's credentials are resolved via ``resolve_runtime_provider``
++        so the turn is bound to the right account. Always fail-open: any error
++        keeps the session's primary route.
++        """
++        try:
++            from hermes_cli.middleware import apply_model_request_middleware
++            result = apply_model_request_middleware(
++                {
++                    "model": model,
++                    "provider": runtime.get("provider"),
++                    "base_url": runtime.get("base_url"),
++                    "api_mode": runtime.get("api_mode"),
++                },
++                user_message=user_message or "",
++            )
++        except Exception:
++            logger.debug("model_request middleware raised; keeping primary route", exc_info=True)
++            return model, runtime
++
++        if not result.changed or not isinstance(result.payload, dict):
++            return model, runtime
++
++        sel = result.payload
++        new_model = sel.get("model") or model
++        cur_provider = runtime.get("provider")
++        new_provider = sel.get("provider") or cur_provider
++
++        if new_provider and new_provider != cur_provider:
++            try:
++                from hermes_cli.runtime_provider import resolve_runtime_provider
++                rp = resolve_runtime_provider(requested=new_provider, target_model=new_model)
++            except Exception:
++                logger.warning(
++                    "model_request: cannot resolve credentials for provider %s; "
++                    "keeping primary route", new_provider, exc_info=True,
++                )
++                return model, runtime
++            if not (rp.get("api_key") or rp.get("command")):
++                logger.warning(
++                    "model_request: provider %s has no usable credentials; keeping primary route",
++                    new_provider,
++                )
++                return model, runtime
++            logger.info(
++                "model_request: re-routed turn %s/%s -> %s/%s",
++                cur_provider, model, new_provider, new_model,
++            )
++            return new_model, {
++                "api_key": rp.get("api_key"),
++                "base_url": rp.get("base_url") or sel.get("base_url"),
++                "provider": new_provider,
++                "api_mode": rp.get("api_mode") or sel.get("api_mode"),
++                "command": rp.get("command"),
++                "args": list(rp.get("args") or []),
++                "credential_pool": rp.get("credential_pool"),
++                "max_tokens": runtime.get("max_tokens"),
++            }
++
++        if new_model != model:
++            logger.info(
++                "model_request: re-routed model %s -> %s (provider %s)",
++                model, new_model, cur_provider,
++            )
++        return new_model, runtime
++
+     def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict) -> dict:
+         """Build the effective model/runtime config for a single turn.
+ 
+@@ -2900,6 +2970,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
+             "credential_pool": runtime_kwargs.get("credential_pool"),
+             "max_tokens": runtime_kwargs.get("max_tokens"),
+         }
++
++        # Pre-model-selection seam: let a plugin re-route this turn to a
++        # different model/provider BEFORE credentials are bound. The decision is
++        # the plugin's (e.g. a local complexity classifier) and must not require
++        # an LLM call. No-op when no `model_request` middleware is registered.
++        model, runtime = self._apply_model_selection(user_message, model, runtime)
++
+         route = {
+             "model": model,
+             "runtime": runtime,
+diff --git a/hermes_cli/middleware.py b/hermes_cli/middleware.py
+index 8795952..00eaf0e 100644
+--- a/hermes_cli/middleware.py
++++ b/hermes_cli/middleware.py
+@@ -21,6 +21,12 @@ TOOL_REQUEST_MIDDLEWARE = "tool_request"
+ TOOL_EXECUTION_MIDDLEWARE = "tool_execution"
+ LLM_REQUEST_MIDDLEWARE = "llm_request"
+ LLM_EXECUTION_MIDDLEWARE = "llm_execution"
++# Fires at per-turn model resolution, BEFORE credentials/transport are bound,
++# so middleware may re-route the turn to a different model AND provider. Unlike
++# ``llm_request`` (which can only rewrite the body of an already-bound provider
++# call), this is the seam for cross-provider routing — e.g. a local complexity
++# classifier choosing cheap vs strong model per turn with no extra LLM call.
++MODEL_REQUEST_MIDDLEWARE = "model_request"
+ 
+ # Back-compat aliases for older PoC branches that used API terminology.
+ API_REQUEST_MIDDLEWARE = LLM_REQUEST_MIDDLEWARE
+@@ -31,6 +37,7 @@ VALID_MIDDLEWARE: set[str] = {
+     TOOL_EXECUTION_MIDDLEWARE,
+     LLM_REQUEST_MIDDLEWARE,
+     LLM_EXECUTION_MIDDLEWARE,
++    MODEL_REQUEST_MIDDLEWARE,
+ }
+ 
+ 
+@@ -74,16 +81,17 @@ def _safe_copy(payload: Any) -> Any:
+         return payload
+ 
+ 
+-def apply_llm_request_middleware(
++def _apply_request_middleware(
++    kind: str,
+     request: Dict[str, Any],
+     **context: Any,
+ ) -> RequestMiddlewareResult:
+-    """Apply registered LLM request middleware.
++    """Shared driver: run a request-middleware chain over a mutable payload.
+ 
+-    Middleware may return ``{"request": {...}}`` to replace the effective
+-    provider kwargs before Hermes sends them.
++    Middleware may return ``{"request": {...}}`` to replace the payload for the
++    next middleware (and the caller).
+     """
+-    if not _has_middleware(LLM_REQUEST_MIDDLEWARE):
++    if not _has_middleware(kind):
+         return RequestMiddlewareResult(
+             payload=request,
+             original_payload=request,
+@@ -96,7 +104,7 @@ def apply_llm_request_middleware(
+     trace: List[Dict[str, Any]] = []
+ 
+     for result in _invoke_middleware(
+-        LLM_REQUEST_MIDDLEWARE,
++        kind,
+         request=current_request,
+         original_request=original_request,
+         **context,
+@@ -117,6 +125,33 @@ def apply_llm_request_middleware(
+     )
+ 
+ 
++def apply_llm_request_middleware(
++    request: Dict[str, Any],
++    **context: Any,
++) -> RequestMiddlewareResult:
++    """Apply registered LLM request middleware.
++
++    Middleware may return ``{"request": {...}}`` to replace the effective
++    provider kwargs before Hermes sends them.
++    """
++    return _apply_request_middleware(LLM_REQUEST_MIDDLEWARE, request, **context)
++
++
++def apply_model_request_middleware(
++    request: Dict[str, Any],
++    **context: Any,
++) -> RequestMiddlewareResult:
++    """Apply registered model-selection middleware (pre-model-selection seam).
++
++    ``request`` is the proposed route ``{"model", "provider", "base_url",
++    "api_mode"}`` for the turn. Middleware may return ``{"request": {...}}`` to
++    re-route the turn to a different model and/or provider BEFORE credentials
++    are resolved. ``context`` carries ``user_message`` and session metadata so a
++    router can decide locally (e.g. a complexity heuristic) without an LLM call.
++    """
++    return _apply_request_middleware(MODEL_REQUEST_MIDDLEWARE, request, **context)
++
++
+ def apply_tool_request_middleware(
+     tool_name: str,
+     args: Dict[str, Any],

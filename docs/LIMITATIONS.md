@@ -48,11 +48,16 @@ correct rather than sending an Opus model name to Kimi's endpoint.
 3. **Single-provider tiering.** If all tiers live under one provider (e.g. OpenRouter, or a local
    proxy), the middleware reroutes freely — at the cost of not using the per-provider OAuth logins.
 
-## The clean fix (roadmap → v0.2)
+## The clean fix (DRAFTED — see `upstream/`)
 
-Add a small **upstream PR to `NousResearch/hermes-agent`**: a `pre_model_selection` hook (or a
-plugin-settable per-turn provider override) that fires **before**
-`gateway/run.py:_resolve_turn_agent_config`, so the same determination core can pick the provider +
-model **and** trigger Hermes' normal credential resolution. That turns transparent per-turn
-cross-provider routing from "impossible via plugin" into a few lines of config. Tracked in
-[`PLAN.md`](PLAN.md) Roadmap.
+The fix is a small **upstream PR to `NousResearch/hermes-agent`** adding a `model_request`
+(pre-model-selection) middleware seam **inside** `gateway/run.py:_resolve_turn_agent_config`, before
+credentials are bound, so a plugin can pick the provider + model and Hermes re-resolves credentials via
+`resolve_runtime_provider`. This turns transparent per-turn cross-provider routing from "impossible via
+plugin" into a registered middleware — decided locally, at the gateway, with **no LLM call**.
+
+It is drafted and verified in [`../upstream/`](../upstream/): the patch applies cleanly to
+hermes-agent `main`, the seam round-trips a re-route in a functional check, and this plugin already
+registers the matching `model_request` middleware (so cross-provider routing activates the moment a
+Hermes build with the seam is in use). Until the PR merges, `same_provider_only` keeps stock behaviour
+correct. See [`PLAN.md`](PLAN.md) Roadmap.

@@ -10,9 +10,9 @@ from __future__ import annotations
 import logging
 
 from .config import RouterConfig
-from .middleware import make_llm_request_middleware
+from .middleware import make_llm_request_middleware, make_model_request_middleware
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __all__ = ["register", "RouterConfig", "__version__"]
 
 logger = logging.getLogger("hermes_model_router")
@@ -37,6 +37,10 @@ def register(ctx) -> None:
         logger.info("hermes-model-router disabled via config; not registering middleware")
         return
 
+    # model_request: cross-provider live routing — used on Hermes builds that
+    # have the pre-model-selection seam (upstream/); ignored on stock builds.
+    ctx.register_middleware("model_request", make_model_request_middleware(cfg))
+    # llm_request: same-provider model swap — works on stock Hermes today.
     ctx.register_middleware("llm_request", make_llm_request_middleware(cfg))
     logger.info(
         "hermes-model-router registered (gate=%.2f, same_provider_only=%s, tiers=%s)",

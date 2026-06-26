@@ -90,7 +90,63 @@ def make_llm_request_middleware(cfg: RouterConfig):
                 "reason": route.reason,
             }
         except Exception as exc:  # never break the agent loop
-            logger.warning("model-router middleware error: %s", exc)
+            logger.warning("model-router llm_request error: %s", exc)
             return None
 
     return llm_request
+
+
+def make_model_request_middleware(cfg: RouterConfig):
+    """Build the ``model_request`` middleware (the pre-model-selection seam).
+
+    Unlike ``llm_request``, this fires before credentials are bound, so it CAN
+    re-route across providers (kimi → opus / gpt-5.5). Requires a Hermes build
+    with the ``model_request`` seam (see upstream/); on stock Hermes it is simply
+    never invoked. The decision is local — no LLM call.
+    """
+
+    def model_request(request: Dict[str, Any] = None, user_message: str = "",
+                      **context: Any) -> Optional[Dict[str, Any]]:
+        if not cfg.enabled or not isinstance(request, dict):
+            return None
+        try:
+            text = (user_message or "").strip()
+            if not text:
+                return None
+
+            cur_provider = str(request.get("provider") or "")
+            cur_model = str(request.get("model") or "")
+
+            decision = classify(text, ctx=context)
+            route = resolve_route(
+                decision, cfg,
+                current_provider=cur_provider,
+                current_model=cur_model,
+                allow_cross_provider=True,   # this seam can re-auth
+            )
+            if route is None:
+                return None
+
+            new_request = dict(request)
+            new_request["model"] = route.model
+            new_request["provider"] = route.provider
+            if route.cross_provider:
+                # Drop stale endpoint fields so the gateway resolves fresh
+                # credentials/base_url/api_mode for the chosen provider.
+                new_request["base_url"] = None
+                new_request["api_mode"] = None
+            logger.info(
+                "model-router[model_request]: %s (conf %.2f) → %s/%s (was %s/%s)",
+                route.tier, route.confidence, route.provider, route.model,
+                cur_provider, cur_model,
+            )
+            return {
+                "request": new_request,
+                "source": "hermes-model-router",
+                "reason": route.reason,
+            }
+        except Exception as exc:
+            logger.warning("model-router model_request error: %s", exc)
+            return None
+
+    return model_request

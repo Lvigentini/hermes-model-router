@@ -95,8 +95,11 @@ model_router:
   `eval/prompts.jsonl`; grow the tier map; optionally add the v2 classifier behind `classify()`.
 
 ## Roadmap
-- **v0.1** heuristic core + same-provider middleware router + config-only manager. ← here
-- **v0.2** upstream `pre_model_selection` hook PR → true cross-provider per-turn routing as a plugin.
+- **v0.1** heuristic core + same-provider middleware router + config-only manager.
+- **v0.2** ← here. Upstream `model_request` (pre-model-selection) seam **drafted** in
+  [`../upstream/`](../upstream/) (patch applies cleanly to hermes-agent `main`; functionally verified).
+  Plugin registers a `model_request` middleware → **true cross-provider per-turn routing**, decided
+  locally at the gateway with no LLM call. Lands once the upstream PR merges.
 - **v0.3** optional local classifier (RouteLLM / ModernBERT) behind the `classify()` signature;
   per-signal weight learning from `eval/prompts.jsonl`.
 - **out of scope (YAGNI):** cross-profile binding router, Fusion/MoA auto-invoke, cost dashboards.
