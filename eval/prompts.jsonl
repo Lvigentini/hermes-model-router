@@ -1,0 +1,20 @@
+{"prompt": "what is the capital of France?", "tier": "cheap"}
+{"prompt": "translate 'good morning' to Spanish", "tier": "cheap"}
+{"prompt": "summarize this in one line: the cat sat on the mat", "tier": "cheap"}
+{"prompt": "define idempotent", "tier": "cheap"}
+{"prompt": "who is the CEO of Tesla?", "tier": "cheap"}
+{"prompt": "convert 10 miles to kilometers", "tier": "cheap"}
+{"prompt": "list three primary colors", "tier": "cheap"}
+{"prompt": "rename the variable foo to bar in this sentence", "tier": "cheap"}
+{"prompt": "Write a Python function that reverses a linked list and add a couple of unit tests for it.", "tier": "smart"}
+{"prompt": "Refactor this React component to use hooks instead of a class:\n```js\nclass A extends React.Component { render(){ return null } }\n```", "tier": "smart"}
+{"prompt": "Explain how OAuth refresh tokens work and when they expire.", "tier": "smart"}
+{"prompt": "Write a SQL query to find the second highest salary per department.", "tier": "smart"}
+{"prompt": "Draft a short email asking a vendor for a status update on an invoice.", "tier": "cheap"}
+{"prompt": "Compare REST and gRPC for a mobile backend and recommend one.", "tier": "smart"}
+{"prompt": "Prove that the algorithm terminates and analyse its worst-case time complexity, then design a more efficient approach with better cache locality.", "tier": "reasoning"}
+{"prompt": "Design a horizontally-scalable, idempotent distributed rate limiter; analyse the trade-offs of token bucket vs sliding window under a race condition, and justify your data store choice.", "tier": "reasoning"}
+{"prompt": "Debug this intermittent deadlock: two threads acquire mutex A and B in different orders. Walk through the root cause step by step and propose a fix that preserves throughput.", "tier": "reasoning"}
+{"prompt": "Architect a multi-tenant event-sourcing system with CQRS; explain the consistency model, the projection rebuild strategy, and the failure modes.", "tier": "reasoning"}
+{"prompt": "Derive the gradient of the softmax cross-entropy loss and explain why it is numerically stable when combined.", "tier": "reasoning"}
+{"prompt": "Optimise this SQL transaction to avoid the deadlock and analyse the isolation-level trade-offs for throughput vs correctness.", "tier": "reasoning"}
