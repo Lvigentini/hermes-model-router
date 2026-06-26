@@ -7,8 +7,8 @@ testable place.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, Optional
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 from .config import RouterConfig
 from .determination import Decision
@@ -22,6 +22,8 @@ class RouteTarget:
     confidence: float
     reason: str
     cross_provider: bool  # target provider differs from the current turn's
+    fallback: List[dict] = field(default_factory=list)  # per-tier fallback chain
+    model_changed: bool = True  # False when only the fallback chain is being set
 
 
 def resolve_route(
@@ -50,20 +52,25 @@ def resolve_route(
     if not provider or not model:
         return None
 
+    fallback = cfg.fallback_for(decision.tier)
     cross_provider = provider != (current_provider or "")
-    if model == current_model and not cross_provider:
-        return None  # already where we want to be
+    model_changed = model != current_model or cross_provider
+
+    # Already on the target model AND no tier fallback to apply → nothing to do.
+    if not model_changed and not fallback:
+        return None
+
     if cross_provider and not allow_cross_provider and cfg.same_provider_only:
         return RouteTarget(
             provider=provider, model=model, tier=decision.tier,
             confidence=decision.confidence,
             reason="cross-provider route suppressed (same_provider_only)",
-            cross_provider=True,
+            cross_provider=True, fallback=fallback, model_changed=model_changed,
         )
 
     return RouteTarget(
         provider=provider, model=model, tier=decision.tier,
         confidence=decision.confidence,
         reason=f"tier={decision.tier} conf={decision.confidence:.2f}",
-        cross_provider=cross_provider,
+        cross_provider=cross_provider, fallback=fallback, model_changed=model_changed,
     )

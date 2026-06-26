@@ -77,3 +77,21 @@ class RouterConfig:
 
     def target_for(self, tier: str) -> Dict[str, str]:
         return self.tiers.get(tier, self.tiers["smart"])
+
+    def fallback_for(self, tier: str) -> list:
+        """Per-tier fallback chain (ordered ``[{provider, model}, ...]``).
+
+        Opt-in: a tier with no ``fallback`` key returns ``[]`` and the turn keeps
+        the global ``fallback_providers`` chain. When present, this REPLACES the
+        global chain for that turn so a cheap turn that fails retries on another
+        cheap model instead of escalating up the global chain.
+        """
+        raw = (self.target_for(tier) or {}).get("fallback") or []
+        chain = []
+        for e in raw:
+            if isinstance(e, dict) and e.get("provider") and e.get("model"):
+                entry = {"provider": str(e["provider"]), "model": str(e["model"])}
+                if e.get("base_url"):
+                    entry["base_url"] = str(e["base_url"])
+                chain.append(entry)
+        return chain

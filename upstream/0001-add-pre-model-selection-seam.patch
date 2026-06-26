@@ -1,8 +1,8 @@
 diff --git a/agent/conversation_loop.py b/agent/conversation_loop.py
-index 05d1977..b3d25c0 100644
+index 05d1977..20ffc77 100644
 --- a/agent/conversation_loop.py
 +++ b/agent/conversation_loop.py
-@@ -368,6 +368,61 @@ def _get_continuation_prompt(is_partial_stub: bool, dropped_tools: Optional[List
+@@ -368,6 +368,78 @@ def _get_continuation_prompt(is_partial_stub: bool, dropped_tools: Optional[List
          )
  
  
@@ -11,15 +11,22 @@ index 05d1977..b3d25c0 100644
 +
 +    Ask any registered ``model_request`` middleware for a route and apply it with
 +    a live ``switch_model`` BEFORE the first API call of the turn. No-op when no
-+    middleware is registered. The agent's ``_fallback_chain`` is left untouched,
-+    so an out-of-credits routed model still falls back down the config chain.
-+    Fail-open: any error keeps the current model.
++    middleware is registered. When the route carries a per-tier ``fallback`` list
++    it replaces the turn's ``_fallback_chain`` (tier-aware fallback); otherwise the
++    config (global) chain is restored. ``switch_model`` preserves the chain object,
++    so an out-of-credits routed model still falls back. Fail-open: any error keeps
++    the current model.
 +    """
 +    try:
 +        from hermes_cli.plugins import has_middleware
 +        if not has_middleware("model_request"):
 +            return
 +        from hermes_cli.middleware import apply_model_request_middleware
++
++        # Snapshot the config (global) fallback chain once — before we ever swap
++        # it for a per-tier chain — so non-tier turns can restore it.
++        if not hasattr(agent, "_router_global_fallback"):
++            agent._router_global_fallback = list(getattr(agent, "_fallback_chain", []) or [])
 +
 +        res = apply_model_request_middleware(
 +            {
@@ -31,32 +38,42 @@ index 05d1977..b3d25c0 100644
 +            user_message=user_message or "",
 +            explicit_model=bool(getattr(agent, "_model_pinned", False)),
 +        )
-+        if not res.changed or not isinstance(res.payload, dict):
-+            return
 +
-+        sel = res.payload
-+        new_model = sel.get("model") or agent.model
-+        new_provider = sel.get("provider") or agent.provider
-+        if new_model == agent.model and new_provider == agent.provider:
-+            return
++        tier_fallback = None
++        if res.changed and isinstance(res.payload, dict):
++            sel = res.payload
++            new_model = sel.get("model") or agent.model
++            new_provider = sel.get("provider") or agent.provider
++            tier_fallback = sel.get("fallback")
 +
-+        from hermes_cli.runtime_provider import resolve_runtime_provider
-+        rp = resolve_runtime_provider(requested=new_provider, target_model=new_model)
-+        if not (rp.get("api_key") or rp.get("command")):
-+            logger.warning(
-+                "model-router: no credentials for %s; keeping %s/%s",
-+                new_provider, agent.provider, agent.model,
-+            )
-+            return
++            if new_model != agent.model or new_provider != agent.provider:
++                from hermes_cli.runtime_provider import resolve_runtime_provider
++                rp = resolve_runtime_provider(requested=new_provider, target_model=new_model)
++                if not (rp.get("api_key") or rp.get("command")):
++                    logger.warning(
++                        "model-router: no credentials for %s; keeping %s/%s",
++                        new_provider, agent.provider, agent.model,
++                    )
++                else:
++                    agent.switch_model(
++                        new_model=new_model,
++                        new_provider=new_provider,
++                        api_key=rp.get("api_key", "") or "",
++                        base_url=rp.get("base_url", "") or "",
++                        api_mode=rp.get("api_mode", "") or "",
++                    )
++                    logger.info("model-router: turn routed -> %s/%s", new_provider, new_model)
 +
-+        agent.switch_model(
-+            new_model=new_model,
-+            new_provider=new_provider,
-+            api_key=rp.get("api_key", "") or "",
-+            base_url=rp.get("base_url", "") or "",
-+            api_mode=rp.get("api_mode", "") or "",
-+        )
-+        logger.info("model-router: turn routed -> %s/%s", new_provider, new_model)
++        # Tier-aware fallback: apply the per-tier chain when present, else restore
++        # the global chain — keeps a cheap turn cheap on failure rather than
++        # escalating up the global chain.
++        new_chain = list(tier_fallback) if tier_fallback else list(agent._router_global_fallback)
++        if list(getattr(agent, "_fallback_chain", []) or []) != new_chain:
++            agent._fallback_chain = new_chain
++            agent._fallback_index = 0
++            agent._fallback_model = new_chain[0] if new_chain else None
++            if tier_fallback:
++                logger.info("model-router: tier fallback chain (%d entries) applied", len(new_chain))
 +    except Exception as exc:  # never break the turn
 +        logger.warning("model-router in-process routing skipped: %s", exc)
 +
@@ -64,7 +81,7 @@ index 05d1977..b3d25c0 100644
  def run_conversation(
      agent,
      user_message: str,
-@@ -432,6 +487,14 @@ def run_conversation(
+@@ -432,6 +504,14 @@ def run_conversation(
      _plugin_user_context = _ctx.plugin_user_context
      _ext_prefetch_cache = _ctx.ext_prefetch_cache
  

@@ -76,6 +76,11 @@ def make_llm_request_middleware(cfg: RouterConfig):
                 return {"source": "hermes-model-router",
                         "reason": f"announce → {route.provider}/{route.model}"}
 
+            if not route.model_changed:
+                # Tier-fallback-only route — llm_request can't set the agent's
+                # fallback chain; that's the model_request seam's job.
+                return None
+
             if route.cross_provider:
                 # Handled by the model_request seam on a patched build; here we
                 # can't re-auth, so just surface the intent.
@@ -143,16 +148,22 @@ def make_model_request_middleware(cfg: RouterConfig):
                 return None
 
             new_request = dict(request)
-            new_request["model"] = route.model
-            new_request["provider"] = route.provider
-            if route.cross_provider:
-                # Drop stale endpoint fields so the gateway resolves fresh
-                # credentials/base_url/api_mode for the chosen provider.
-                new_request["base_url"] = None
-                new_request["api_mode"] = None
+            if route.model_changed:
+                new_request["model"] = route.model
+                new_request["provider"] = route.provider
+                if route.cross_provider:
+                    # Drop stale endpoint fields so the gateway resolves fresh
+                    # credentials/base_url/api_mode for the chosen provider.
+                    new_request["base_url"] = None
+                    new_request["api_mode"] = None
+            if route.fallback:
+                # Per-tier fallback chain for THIS turn (replaces the global
+                # fallback_providers chain — keeps a cheap turn cheap on failure).
+                new_request["fallback"] = route.fallback
             logger.info(
-                "model-router[model_request]: %s (conf %.2f) → %s/%s (was %s/%s)",
+                "model-router[model_request]: %s (conf %.2f) → %s/%s%s (was %s/%s)",
                 route.tier, route.confidence, route.provider, route.model,
+                f" +{len(route.fallback)} tier-fallback" if route.fallback else "",
                 cur_provider, cur_model,
             )
             return {

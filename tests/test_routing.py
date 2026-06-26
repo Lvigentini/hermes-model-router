@@ -124,6 +124,58 @@ def test_model_request_respects_explicit_pin():
     assert off(request=req, user_message=hard, explicit_model=True) is not None
 
 
+def _cfg_fb(**over):
+    base = dict(
+        enabled=True, mode="auto", gate_confidence=0.0, respect_explicit_model=True,
+        tiers={
+            "cheap": {"provider": "kimi-coding", "model": "kimi-for-coding",
+                      "fallback": [{"provider": "kimi-coding", "model": "kimi-k2.6"},
+                                   {"provider": "google-gemini-cli", "model": "gemini-3.5-flash"}]},
+            "smart": {"provider": "openai-codex", "model": "gpt-5.5"},
+            "reasoning": {"provider": "anthropic", "model": "claude-opus-4-8",
+                          "fallback": [{"provider": "openai-codex", "model": "gpt-5.5"}]},
+        },
+    )
+    base.update(over)
+    return RouterConfig.from_mapping(base)
+
+
+def test_config_fallback_for_normalizes():
+    cfg = _cfg_fb()
+    fb = cfg.fallback_for("cheap")
+    assert fb == [{"provider": "kimi-coding", "model": "kimi-k2.6"},
+                  {"provider": "google-gemini-cli", "model": "gemini-3.5-flash"}]
+    assert cfg.fallback_for("smart") == []   # no fallback key → empty
+
+
+def test_resolve_route_carries_tier_fallback_even_when_model_unchanged():
+    cfg = _cfg_fb()
+    d = classify("what is the capital of France?")  # cheap; already on cheap target
+    r = resolve_route(d, cfg, current_provider="kimi-coding", current_model="kimi-for-coding",
+                      allow_cross_provider=True)
+    assert r is not None and r.model_changed is False           # no model switch...
+    assert r.fallback and r.fallback[0]["model"] == "kimi-k2.6" # ...but tier fallback applies
+
+
+def test_model_request_emits_fallback_without_switch():
+    mw = make_model_request_middleware(_cfg_fb())
+    out = mw(request={"model": "kimi-for-coding", "provider": "kimi-coding"},
+             user_message="what is the capital of France?")
+    assert out is not None
+    r = out["request"]
+    assert "model" not in r or r["model"] == "kimi-for-coding"  # no switch
+    assert r["fallback"][0]["model"] == "kimi-k2.6"             # tier fallback emitted
+
+
+def test_model_request_emits_fallback_with_cross_provider_switch():
+    mw = make_model_request_middleware(_cfg_fb())
+    out = mw(request={"model": "kimi-for-coding", "provider": "kimi-coding"},
+             user_message="Prove termination and analyse worst-case complexity, then redesign it.")
+    r = out["request"]
+    assert r["provider"] == "anthropic" and r["model"] == "claude-opus-4-8"
+    assert r["fallback"] == [{"provider": "openai-codex", "model": "gpt-5.5"}]
+
+
 def test_model_request_noop_on_easy_prompt():
     mw = make_model_request_middleware(_cfg())
     req = {"model": "kimi-for-coding", "provider": "kimi-coding"}

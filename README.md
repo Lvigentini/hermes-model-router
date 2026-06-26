@@ -51,6 +51,33 @@ model_router:
     reasoning: { provider: anthropic,    model: claude-opus-4-8 }
 ```
 
+### Tier-aware fallback (optional)
+
+By default a routed turn that fails (out of credits / rate-limit) falls back down Hermes' **global**
+`fallback_providers` chain — which can escalate a *cheap* turn up to Opus. Give a tier its own
+`fallback` list and that list **replaces** the global chain for that turn, so a cheap turn stays cheap:
+
+```yaml
+model_router:
+  tiers:
+    cheap:
+      provider: kimi-coding
+      model: kimi-for-coding
+      fallback:                       # cheap-tier turn fails → try other CHEAP models, not Opus
+        - { provider: kimi-coding, model: kimi-k2.6 }
+        - { provider: google-gemini-cli, model: gemini-3.5-flash }
+    reasoning:
+      provider: anthropic
+      model: claude-opus-4-8
+      fallback:
+        - { provider: openai-codex, model: gpt-5.5 }
+        - { provider: google-gemini-cli, model: gemini-3-pro }
+```
+
+A tier with no `fallback` key keeps the global chain. Applied on the **in-process** path (TUI/CLI/
+oneshot) via the seam; the gateway path currently uses the global chain (tier-fallback there is a
+follow-up). `switch_model` preserves the chain, so failures still fall back correctly.
+
 ## Modes — and is "auto" a Hermes feature?
 
 **No.** `mode` (and the whole notion of complexity-based routing) is **this plugin's**, not native
